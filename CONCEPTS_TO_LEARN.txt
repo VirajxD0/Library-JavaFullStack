@@ -1,0 +1,404 @@
+================================================================================
+ CONCEPTS TO LEARN — Library Management System (Java Full Stack)
+ Complete Learning Roadmap for Core Java → JDBC → Servlets → JSP → Spring → 
+ Spring Boot → Hibernate → REST APIs → Spring Security + JWT + BCrypt
+================================================================================
+Goal: Understand EVERY folder/file in library-management-system well enough to
+explain in interview. Study in order A → H. Tick each concept after you can
+whiteboard it without looking.
+
+--------------------------------------------------------------------------------
+A. CORE JAVA (Fundamentals — Week 1)
+--------------------------------------------------------------------------------
+1. OOP Pillars
+   - Class vs Object, Encapsulation (private fields + getters/setters), Inheritance, Polymorphism, Abstraction
+   - Where in project: entity/Book.java (encapsulation, business methods isAvailable()), service interfaces (abstraction)
+   - Task: Why entity fields are private? What if we made them public?
+
+2. Constructors, this(), super(), default vs parameterized (Book.java 3 constructors)
+
+3. Collections Framework
+   - List vs Set vs Map, ArrayList vs LinkedList, HashSet (no duplicates — used for authors), HashMap
+   - Where: legacy/core/BookManager.java (HashMap bookStore, ArrayList results), service impls (List<BookDTO>)
+   - Task: Why Set<Author> not List<Author> in Book? (prevent duplicate authors)
+
+4. Exception Handling
+   - try/catch/finally, throws, throw, checked vs unchecked (RuntimeException), custom exceptions
+   - Where: exception/ResourceNotFoundException, GlobalExceptionHandler, JdbcBookDao SQLException handling
+   - Task: Why ResourceNotFoundException extends RuntimeException (unchecked)?
+
+5. Generics
+   - List<BookDTO>, JpaRepository<Book, Long>, ApiResponse<T> generic wrapper
+   - Task: What is <T> in ApiResponse.success(T data)?
+
+6. Java 8+ Features
+   - Lambda: (book) -> book.getTitle().contains(k)
+   - Stream API: .stream().filter().map().collect()
+   - Method reference: results::add, forEach(System.out::println)
+   - Where: legacy/core/BookManager.searchBooks(), DataInitializer, GlobalExceptionHandler stream joining
+   - Task: Rewrite for-loop to stream in BookManager
+
+7. Date/Time API
+   - LocalDate, LocalDateTime, ChronoUnit.DAYS.between, Date for JWT
+   - Where: entity/BorrowRecord (dueDate, isOverdue()), BorrowRecord.calculateDaysOverdue()
+
+8. Other Core
+   - String handling, StringBuilder, equals vs ==, @Override toString()
+   - Access modifiers (public/private/protected), static, final, enum (Role.java)
+   - Task: Why Role enum not String?
+
+--------------------------------------------------------------------------------
+B. JDBC (Java Database Connectivity — Week 1-2)
+--------------------------------------------------------------------------------
+9. JDBC Steps
+   - Load Driver (Class.forName), DriverManager.getConnection(url,user,pwd), Connection, Statement vs PreparedStatement, ResultSet, close()
+   - Where: legacy/jdbc/JdbcBookDao.java — getConnection(), findAll(), insert()
+
+10. PreparedStatement vs Statement
+    - Why PreparedStatement prevents SQL injection: ps.setString(1, userInput) vs "SELECT * WHERE name='"+input+"'"
+    - Task: What happens if input = "' OR '1'='1" with Statement?
+
+11. ResultSet Mapping
+    - rs.next(), rs.getLong("book_id"), rs.getString("title") → new Book(...)
+    - Where: JdbcBookDao.mapRow(ResultSet rs) — manual ORM
+
+12. Connection Management
+    - Why try-with-resources: try(Connection c = ...) auto-close
+    - Connection Pool: HikariCP (used by Spring Boot by default, configured via spring.datasource.hikari.*)
+
+13. Transaction: setAutoCommit(false), commit(), rollback()
+
+14. Interview Contrast: JDBC (manual SQL + mapping) vs Spring Data JPA (auto) — be ready to compare.
+
+--------------------------------------------------------------------------------
+C. SERVLETS (Jakarta Servlet 6 — Week 2)
+--------------------------------------------------------------------------------
+15. Servlet Basics
+    - What is Servlet? Java class handling HTTP requests, extends HttpServlet
+    - Lifecycle: init() → service() → doGet()/doPost() → destroy()
+    - Where: legacy/servlet/BookServlet.java
+
+16. Annotations vs web.xml
+    - @WebServlet("/legacy/books/*") vs <servlet> in web.xml
+    - Where: BookServlet @WebServlet, webapp/WEB-INF/web.xml (welcome-file, error-page)
+
+17. Request/Response
+    - HttpServletRequest: getParameter(), getPathInfo(), getSession(), setAttribute(), getHeader("Authorization")
+    - HttpServletResponse: setContentType(), getWriter().println(), sendRedirect(), setStatus()
+    - Where: BookServlet.doGet/doPost
+
+18. Session Management
+    - HttpSession: setAttribute("currentUser"), getAttribute, invalidate() (logout)
+    - Cookie: JSESSIONID
+    - Where: legacy.auth demo, security formLogin uses session (STATEFUL)
+
+19. Filter vs Servlet vs Listener
+    - Filter: intercepts before servlet (e.g., AuthFilter checks session)
+    - Listener: listens to events (e.g., MyWebListener — not in this project but mention)
+    - Task: Diff Filter (OncePerRequestFilter) vs Interceptor (HandlerInterceptor) vs Spring Security FilterChain
+
+20. JSP vs Servlet
+    - Servlet = Java with HTML inside out.println(); JSP = HTML with Java inside <% %>
+    - Why JSP over Servlet for view? Easier HTML.
+
+--------------------------------------------------------------------------------
+D. JSP + JSTL (Jakarta Server Pages — Week 2-3)
+--------------------------------------------------------------------------------
+21. JSP Basics
+    - Directives: <%@ page language="java" %>, <%@ taglib %>
+    - Scriptlets <% %> (avoid), Expression <%= %> (avoid), EL ${book.title} (use), JSTL
+    - Where: all jsp/** files header uses EL + JSTL
+
+22. JSTL Core Tags
+    - c:forEach var="book" items="${books}" , c:if, c:choose/c:when/c:otherwise, c:set
+    - Where: book/list-books.jsp (nested forEach for authors), member/list-members.jsp
+
+23. EL (Expression Language)
+    - ${book.title} → calls book.getTitle(), ${pageContext.request.userPrincipal.name}, ${param.error}
+    - Where: header.jsp, list-books.jsp
+
+24. Spring Form Tags
+    - form:form modelAttribute="book" form:input path="title" form:select form:errors
+    - Where: book/add-book.jsp, auth/register.jsp
+    - Task: Diff form:input vs <input>
+
+25. Include Mechanisms
+    - <%@ include file="header.jsp" %> (compile-time) vs <jsp:include page="header.jsp"/> (runtime)
+    - Where: Every jsp includes header/footer
+
+26. View Resolver
+    - How "book/list-books" → /WEB-INF/jsp/book/list-books.jsp via application.properties: prefix/suffix
+    - Where: application.properties, WebMvcConfig.java
+
+--------------------------------------------------------------------------------
+E. SPRING FRAMEWORK (Week 3-4)
+--------------------------------------------------------------------------------
+27. IoC / DI (Inversion of Control / Dependency Injection)
+    - No new BookRepository(); Spring creates beans. @Component, @Service, @Repository, @Configuration
+    - Injection: @Autowired field vs constructor (constructor preferred)
+    - Where: service/impl/BookServiceImpl @Autowired BookRepository
+
+28. Spring MVC Flow
+    - Request → DispatcherServlet → HandlerMapping → Controller → Service → Repository → DB → ViewResolver → JSP
+    - Task: Draw this flow.
+
+29. Annotations Deep Dive
+    - @Controller vs @RestController (Controller+ResponseBody), @RequestMapping, @GetMapping/@PostMapping
+    - @RequestParam (?page=0), @PathVariable (/{id}), @ModelAttribute (form binding), @RequestBody (JSON), @Valid, @AuthenticationPrincipal
+    - Where: controller/BookController vs rest/BookRestController
+
+30. Model vs ModelAndView
+    - Model model.addAttribute("books", list) → accessible as ${books} in JSP
+    - Where: BookController.listBooks()
+
+31. Validation
+    - @NotBlank, @Email, @Size, @Min + @Valid + BindingResult → GlobalExceptionHandler handles MethodArgumentNotValidException
+    - Where: dto/BookDTO, dto/RegisterRequest, GlobalExceptionHandler
+
+32. Transaction Management
+    - @Transactional (class/method), readOnly=true for queries, commit on success / rollback on RuntimeException
+    - Where: service/impl/*
+
+33. AOP (Aspect Oriented Programming)
+    - @Transactional is AOP proxy; @RestControllerAdvice is cross-cutting concern
+    - Where: GlobalExceptionHandler
+
+--------------------------------------------------------------------------------
+F. SPRING BOOT (Week 4)
+--------------------------------------------------------------------------------
+34. Why Spring Boot?
+    - Auto-configuration, Embedded Tomcat (no external Tomcat), Starter POMs (web, data-jpa, security), Profiles
+
+35. Main Class
+    - @SpringBootApplication = @Configuration + @EnableAutoConfiguration + @ComponentScan
+    - SpringApplication.run() bootstraps context, tomcat, scan beans
+    - Where: LibraryManagementApplication.java
+
+36. Application Properties & Profiles
+    - application.properties (default) → application-dev.properties (H2) vs application-prod.properties (MySQL)
+    - spring.profiles.active=dev, jwt.secret, server.port, spring.jpa.hibernate.ddl-auto
+    - Where: resources/application*.properties
+
+37. Embedded Tomcat + WAR vs JAR
+    - This project packaging=war, tomcat-embed-jasper scope provided for JSP, can still run via java -jar or external Tomcat
+    - Where: pom.xml <packaging>war</packaging>
+
+38. DataInitializer / CommandLineRunner
+    - Bean that runs after context loaded, seeds DB if empty (Core Java lambda)
+    - Where: config/DataInitializer.java
+
+39. Actuator (optional not in project but know): health, metrics endpoints.
+
+--------------------------------------------------------------------------------
+G. HIBERNATE / JPA (Week 4-5)
+--------------------------------------------------------------------------------
+40. JPA vs Hibernate
+    - JPA = spec (jakarta.persistence.*), Hibernate = implementation. Spring Data JPA uses Hibernate underneath.
+
+41. Entity Mapping
+    - @Entity @Table(name="users") @Id @GeneratedValue(IDENTITY=auto_increment) @Column(unique, nullable, length) @Enumerated(STRING)
+    - Where: entity/User.java (7 entities)
+
+42. Relationships (MOST IMPORTANT)
+    - @ManyToOne(fetch=EAGER) + @JoinColumn(name="category_id") → books.category_id FK
+    - @ManyToMany + @JoinTable(name="book_authors", joinColumns=@JoinColumn(name="book_id"), inverseJoinColumns=...) → join table
+    - @OneToOne (User ↔ Member), @OneToMany (Category → Books if added)
+    - Fetch: EAGER (load immediately) vs LAZY (load on demand) — why Book.category EAGER but User.member LAZY
+    - Cascade: PERSIST/MERGE (save book → save authors if new)
+    - Task: Draw categories → books → book_authors → authors diagram
+
+43. JPQL vs Native SQL
+    - JPQL: SELECT b FROM Book b WHERE b.title LIKE... (entity fields, not table columns)
+    - Native: SELECT * FROM books ...
+    - @Query with @Param
+    - Where: repository/BookRepository.searchBooks()
+
+44. Spring Data JPA Magic
+    - Extends JpaRepository<Book, Long> gives findAll(), findById(), save(), delete(), paging
+    - Derived query: findByTitleContainingIgnoreCase, findByAvailableCopiesGreaterThan, existsByUsername
+    - Where: all 7 repositories
+
+45. DDL Auto
+    - update (alter table to match entity, dev), validate (prod), create-drop
+    - Where: application.properties spring.jpa.hibernate.ddl-auto=update
+
+46. Hibernate States
+    - Transient (new), Persistent (managed, in session), Detached (after session close), Removed
+    - Task: What state after bookRepository.save(new Book())?
+
+47. N+1 Problem (advanced)
+    - If LAZY and loop books → each getAuthors triggers query → fix via JOIN FETCH
+    - Where: BookRepository.findByIdWithAuthors @Query LEFT JOIN FETCH
+
+--------------------------------------------------------------------------------
+H. REST APIs (Week 5)
+--------------------------------------------------------------------------------
+48. REST Principles
+    - Resource naming (/api/v1/books not /getBooks), HTTP verbs GET/POST/PUT/DELETE, status codes 200/201/400/401/403/404/500
+    - Where: rest/* controllers
+
+49. Annotations
+    - @RestController (= @Controller + @ResponseBody auto JSON), @RequestMapping("/api/v1/books"), @GetMapping("/{id}"), @PostMapping, @PutMapping, @DeleteMapping
+    - @PathVariable Long id, @RequestParam String keyword, @RequestBody @Valid BookDTO, @RequestBody Map<String,Long>
+
+50. Response Handling
+    - ResponseEntity<ApiResponse<T>> with success/message/data wrapper, .ok(), .status(CREATED)
+    - Where: rest/BookRestController, dto/ApiResponse
+
+51. DTO Pattern
+    - Why not expose Entity directly? Hide password, avoid circular JSON (Book → Author → Book), flatten relations (categoryName)
+    - Where: dto/* + mapper/*
+
+52. Content Negotiation
+    - Produces JSON via Jackson (spring-boot-starter-web auto), consumes JSON
+
+53. Testing REST
+    - Postman: POST /api/v1/auth/login → get token → Header Authorization: Bearer <token> → GET /api/v1/books
+    - cURL: see README section 7
+
+54. Global Exception Handling for REST
+    - @RestControllerAdvice + @ExceptionHandler → consistent JSON error format {status, message}
+    - Where: exception/GlobalExceptionHandler.java (now handles 401/403)
+
+--------------------------------------------------------------------------------
+I. SPRING SECURITY + JWT + BCRYPT + RBAC (Week 5-6 — Modern, Most Important)
+--------------------------------------------------------------------------------
+55. Why Security? Manual HttpSession check fails if you forget a URL. Security is central FilterChain.
+
+56. Spring Security 6 Concepts
+    - SecurityFilterChain bean(s), Authentication, Authorization, Principal, GrantedAuthority, SecurityContextHolder
+    - FilterChainProxy → DelegatingFilterProxy → chain of filters
+    - Where: security/SecurityConfig.java (2 chains)
+
+57. Two Chains in This Project
+    - Order(1) /api/** → STATELESS + csrf disable + JWT filter, permit /auth/**, authenticated for rest, 401 JSON
+    - Order(2) /** → STATEFUL + formLogin, permit /, /login, /register, hasRole ADMIN for /books/add etc
+    - Task: Explain difference STATELESS vs STATEFUL, why two chains needed for JSP session + REST JWT.
+
+58. Authentication Flow (JSP)
+    - GET /login → login.jsp form → POST /login (username/password) → DaoAuthenticationProvider → UserDetailsService.loadUserByUsername → PasswordEncoder.matches → success → defaultSuccessUrl /dashboard → session cookie JSESSIONID
+
+59. Authentication Flow (REST JWT)
+    - POST /api/v1/auth/login {username,password} → AuthService → authenticationManager.authenticate() → UserDetailsService + BCrypt check → JwtTokenProvider.generateToken() → return JwtResponse{token} → client stores → every API request header Authorization: Bearer <token> → JwtAuthenticationFilter validates → sets SecurityContext → controller sees authenticated
+
+60. BCryptPasswordEncoder
+    - Adaptive hashing, salt per password, one-way, strength 10 (2^10 rounds). Why not MD5? MD5 fast + unsalted → rainbow table.
+    - Where: SecurityConfig.passwordEncoder(), AuthServiceImpl.encode(), DataInitializer.encode("Admin@123") → hashes start $2a$10$
+
+61. UserDetailsService
+    - Bridge between your User table and Security. Must return org.springframework.security.core.userdetails.User with username, password (hashed), authorities (list of SimpleGrantedAuthority("ROLE_ADMIN"))
+    - Where: security/UserDetailsServiceImpl.java — supports login via username OR email
+
+62. JWT (JJWT 0.12.5)
+    - Structure: header.payload.signature (Base64Url). Header {alg:HS256}, Payload {sub:username, iat, exp}, Signature HMAC SHA256(secret)
+    - Generation: Jwts.builder().subject(username).issuedAt(now).expiration(expiry).signWith(key).compact()
+    - Validation: Jwts.parser().verifyWith(key).build().parseSignedClaims(token) → throws if tampered/expired
+    - Extraction: getSubject()
+    - Where: security/JwtTokenProvider.java — secret from application.properties jwt.secret (base64 32B), expiration 86400000ms=24h
+    - Task: Decode a token at jwt.io and identify parts.
+
+63. JwtAuthenticationFilter
+    - Extends OncePerRequestFilter, getJwtFromRequest() reads "Bearer " prefix, validateToken(), load UserDetails, create UsernamePasswordAuthenticationToken, setDetails, SecurityContextHolder.getContext().setAuthentication()
+    - Why OncePerRequestFilter? Ensures once per request even with forwards.
+    - Where: security/JwtAuthenticationFilter.java — registered addFilterBefore(UsernamePasswordAuthenticationFilter)
+
+64. RBAC (Role-Based Access Control)
+    - Enum Role.ROLE_USER / ROLE_ADMIN, @Enumerated(STRING) stored as string.
+    - Config: .hasRole("ADMIN") → expects ROLE_ADMIN, .hasAnyRole("USER","ADMIN")
+    - JSP: ${pageContext.request.isUserInRole('ROLE_ADMIN')} to hide buttons/menu
+    - Task: Add new ROLE_LIBRARIAN and restrict /categories/**
+
+65. Authorization Decisions
+    - URL-based in SecurityConfig vs Method-based @PreAuthorize("hasRole('ADMIN')") on service methods (EnableMethodSecurity)
+    - Demo hidden: Book.RestController could add @PreAuthorize, but currently URL-based.
+
+66. CSRF
+    - Cross-Site Request Forgery. For JSP session, POST needs _csrf hidden field. This project disables CSRF for demo (SecurityConfig csrf.disable()) with comment. In production enable and add <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
+    - Why disabled for /api/**? JWT stateless already protected (token not cookie).
+
+67. Logout & Session
+    - /logout → invalidateHttpSession(true) → deleteCookies JSESSIONID → redirect /login?logout
+    - For JWT, logout is client-side: delete token from localStorage (stateless no server logout unless blacklist).
+
+68. Error Handling for Security
+    - API: authenticationEntryPoint returns 401 JSON; Web: accessDeniedPage /403 → error/403.jsp
+    - GlobalExceptionHandler handles BadCredentialsException → 401, AccessDeniedException → 403
+
+69. Password & User Flow
+    - Register: RegisterRequest @Valid → check existsByUsername/email → encode → save User + optional Member → UserDTO (no password)
+    - Login: LoginRequest → authenticate → generate JWT → JwtResponse
+    - Where: service/impl/AuthServiceImpl.java, controller/AuthController + rest/AuthRestController
+
+--------------------------------------------------------------------------------
+J. ADDITIONAL CONCEPTS
+--------------------------------------------------------------------------------
+70. Maven
+    - pom.xml: parent spring-boot-starter-parent (version management), dependencies (web, jpa, security, jjwt, h2, mysql, jasper, jstl), build plugins (spring-boot-maven-plugin, maven-war-plugin)
+    - Commands: mvn clean install, mvn spring-boot:run, mvn clean package
+    - Scope: provided (jasper only at runtime), runtime (h2, mysql)
+
+71. DTO & Mapper Pattern
+    - DTO hides internal entity (password), flattens relations (categoryName instead of Category object), validation.
+    - Mapper: toDTO() / toEntity() manual mapping (vs MapStruct). Why manual? Interview easy to explain.
+    - Where: dto/*, mapper/* (BookMapper uses AuthorMapper)
+
+72. Layered Architecture
+    - Controller → Service (business + @Transactional) → Repository (data) → DB
+    - Why interface + impl? SOLID, mock in tests, swap impl.
+
+73. Validation
+    - Bean Validation: @NotBlank, @Email, @Size, @Min with messages → triggers MethodArgumentNotValidException
+
+74. Bootstrap 5 + JSP Integration
+    - CDN bootstrap.min.css, table, card, badge, alert, btn, grid row/col-md-*
+    - Where: all JSPs header includes Bootstrap, dashboard stat cards
+
+75. Profiles (dev/prod)
+    - Spring reads application.properties then application-{profile}.properties. Active profile dev → H2, prod → MySQL. Switch via spring.profiles.active=prod or -Dspring.profiles.active=prod
+
+76. Deployment
+    - Embedded Tomcat: java -jar target/*.war (Spring Boot) vs External Tomcat: copy war to webapps/
+    - WAR packaging for JSP (JSP needs war + jasper). JAR would not support JSP well.
+
+77. Testing Strategy
+    - Unit: service with mocks, Repository with @DataJpaTest, Controller with @WebMvcTest + @WithMockUser, Security with spring-security-test
+    - Manual: Postman for JWT, browser for JSP
+
+78. Git & .gitignore
+    - Ignore target/, .idea, .settings, .DS_Store, *.log
+
+--------------------------------------------------------------------------------
+K. INTERVIEW PREPARATION CHECKLIST
+--------------------------------------------------------------------------------
+79. Be able to explain for each tech:
+    - What it is (1 sentence)
+    - Why we used it (vs alternative: JDBC vs JPA, Servlet vs Spring MVC, Session vs JWT)
+    - Where in project
+    - One trade-off / pitfall (e.g., Hibernate N+1, JWT stateless can't revoke easily)
+
+80. Whiteboard Tasks:
+    - Draw tables + relations (7 tables, join table)
+    - Draw Spring MVC + Security request flow with JWT filter
+    - Write BCrypt check pseudo-code
+    - Write JPQL vs SQL for searchBooks
+
+81. Live Demo Ready:
+    - Login as user vs admin difference
+    - Register new user
+    - Postman JWT flow
+    - Show H2 console users table hashed passwords
+
+82. Resume Story:
+    - "Built full-stack secure library with Spring Security/JWT, BCrypt, RBAC, layered architecture, DTOs, global exception handling, 7-table normalized schema, legacy JDBC/Servlet demo to show evolution."
+
+================================================================================
+ STUDY ORDER (Suggested 3 Weeks)
+================================================================================
+Week 1: A (Core Java) → B (JDBC) → C (Servlets) → Do legacy package yourself
+Week 2: D (JSP) → E (Spring) → F (Spring Boot) → Run project without security branch
+Week 3: G (Hibernate) → H (REST) → I (Security/JWT) → Test role + JWT flows, read SecurityConfig line-by-line
+
+Each day: Read concept → find file → add a comment in your words → break it and fix it.
+
+Good luck — if you can explain SecurityConfig two chains + JwtTokenProvider without notes, you are ready for interview.
+================================================================================
