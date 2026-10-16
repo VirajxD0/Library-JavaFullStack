@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -16,16 +17,18 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
- * SecurityConfig - Central Spring Security configuration (Modern approach)
- * 
+ * SecurityConfig - Central Spring Security configuration.
+ *
  * Two filter chains:
  * 1) API chain (stateless, JWT) for /api/**
  * 2) Web chain (stateful, formLogin + session) for JSP
- * 
- * Roles:
- * - PUBLIC: /, /login, /register, /api/v1/auth/**, /h2-console/**
- * - USER: GET /books, /books/view/**, /dashboard, /borrows/**
- * - ADMIN: USER + POST/PUT/DELETE /books/**, /members/**
+ *
+ * Role model (librarian vs member; legacy aliases still accepted):
+ * - Librarian: ROLE_LIBRARIAN (+ legacy ROLE_ADMIN) - manages books/members/categories
+ * - Member: ROLE_MEMBER (+ legacy ROLE_USER) - browses, borrows, returns
+ *
+ * Method-level rules with @PreAuthorize on REST controllers are the
+ * primary guard; URL matchers below are defence-in-depth.
  */
 @Configuration
 @EnableMethodSecurity
@@ -64,7 +67,12 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/v1/auth/**").permitAll()
-                .requestMatchers("/api/v1/books/search", "/api/v1/books/available").permitAll()
+                .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/books/search", "/api/v1/books/available").permitAll()
+                // Librarian-only writes (method-level @PreAuthorize enforces the same)
+                .requestMatchers(HttpMethod.POST, "/api/v1/books/**", "/api/v1/members/**", "/api/v1/categories/**").hasAnyRole("LIBRARIAN", "ADMIN")
+                .requestMatchers(HttpMethod.PUT, "/api/v1/books/**", "/api/v1/members/**", "/api/v1/categories/**").hasAnyRole("LIBRARIAN", "ADMIN")
+                .requestMatchers(HttpMethod.DELETE, "/api/v1/books/**", "/api/v1/members/**", "/api/v1/categories/**").hasAnyRole("LIBRARIAN", "ADMIN")
                 .requestMatchers("/api/v1/books/**", "/api/v1/members/**", "/api/v1/borrows/**", "/api/v1/categories/**").authenticated()
                 .anyRequest().authenticated()
             )
@@ -88,10 +96,11 @@ public class SecurityConfig {
             // DEMO: CSRF disabled for simplicity (forms work without token). In production, enable CSRF with _csrf hidden field!
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/", "/login", "/register", "/css/**", "/js/**", "/h2-console/**", "/api/v1/auth/**", "/403", "/error/**").permitAll()
-                .requestMatchers("/books/add", "/books/edit/**", "/books/delete/**", "/books/save", "/books/update/**").hasRole("ADMIN")
-                .requestMatchers("/members/**").hasRole("ADMIN")
-                .requestMatchers("/dashboard", "/books", "/books/view/**", "/books/search", "/borrows", "/borrows/borrow", "/borrows/return/**", "/borrows/overdue").hasAnyRole("USER", "ADMIN")
+                .requestMatchers("/", "/login", "/register", "/css/**", "/js/**", "/h2-console/**", "/api/v1/auth/**", "/403", "/error/**",
+                        "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/actuator/health", "/actuator/info").permitAll()
+                .requestMatchers("/books/add", "/books/edit/**", "/books/delete/**", "/books/save", "/books/update/**").hasAnyRole("LIBRARIAN", "ADMIN")
+                .requestMatchers("/members/**").hasAnyRole("LIBRARIAN", "ADMIN")
+                .requestMatchers("/dashboard", "/books", "/books/view/**", "/books/search", "/borrows", "/borrows/borrow", "/borrows/return/**", "/borrows/overdue").hasAnyRole("MEMBER", "USER", "LIBRARIAN", "ADMIN")
                 .anyRequest().authenticated()
             )
             .formLogin(form -> form

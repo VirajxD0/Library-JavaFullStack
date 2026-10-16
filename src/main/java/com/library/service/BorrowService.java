@@ -23,6 +23,8 @@ public interface BorrowService {
      */
     BorrowDTO returnBook(Long borrowId);
 
+    BorrowDTO getBorrowById(Long borrowId);
+
     List<BorrowDTO> getAllBorrows();
     List<BorrowDTO> getBorrowsByMember(Long memberId);
     List<BorrowDTO> getOverdueBorrows();

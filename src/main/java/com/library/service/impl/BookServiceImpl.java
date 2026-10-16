@@ -1,6 +1,8 @@
 package com.library.service.impl;
 
 import com.library.dto.BookDTO;
+import com.library.dto.BookSearchCriteria;
+import com.library.dto.PagedResponse;
 import com.library.entity.Author;
 import com.library.entity.Book;
 import com.library.entity.Category;
@@ -12,7 +14,10 @@ import com.library.repository.BookRepository;
 import com.library.repository.CategoryRepository;
 import com.library.repository.PublisherRepository;
 import com.library.service.BookService;
+import com.library.specification.BookSpecification;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,17 +25,6 @@ import java.util.List;
 
 /**
  * BookServiceImpl - Business logic implementation for Book operations
- * 
- * Key Annotations:
- * @Service - Marks this as a Spring service component (business logic layer)
- * @Transactional - Each method runs in a database transaction
- *   - On success: transaction is COMMITTED
- *   - On exception: transaction is ROLLED BACK
- *   - This ensures data consistency
- * 
- * Dependency Injection:
- * - All dependencies are injected via @Autowired (constructor injection recommended in production)
- * - Spring automatically creates and manages these objects (IoC Container)
  */
 @Service
 @Transactional // All methods in this class are transactional
@@ -51,12 +45,32 @@ public class BookServiceImpl implements BookService {
     @Autowired
     private BookMapper bookMapper;
 
+    private PagedResponse<BookDTO> toPagedResponse(Page<Book> page) {
+        List<BookDTO> content = bookMapper.toDTOList(page.getContent());
+        return new PagedResponse<>(content, page.getNumber(), page.getSize(),
+                page.getTotalElements(), page.getTotalPages(), page.isLast());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PagedResponse<BookDTO> getAllBooks(Pageable pageable) {
+        return toPagedResponse(bookRepository.findAll(pageable));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PagedResponse<BookDTO> searchBooks(BookSearchCriteria criteria, Pageable pageable) {
+        return toPagedResponse(bookRepository.findAll(BookSpecification.fromCriteria(criteria), pageable));
+    }
+
     @Override
     @Transactional(readOnly = true) // Read-only optimization for queries
     public List<BookDTO> getAllBooks(int page, int size) {
-        // Spring Data JPA provides pagination support
+        // Legacy JSP-friendly form: bounded list (callers should migrate to Pageable).
         List<Book> books = bookRepository.findAll();
-        return bookMapper.toDTOList(books);
+        int from = Math.min(page * size, books.size());
+        int to = Math.min(from + size, books.size());
+        return bookMapper.toDTOList(books.subList(from, to));
     }
 
     @Override

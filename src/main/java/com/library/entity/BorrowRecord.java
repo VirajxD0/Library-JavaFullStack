@@ -104,13 +104,14 @@ public class BorrowRecord {
     }
 
     /**
-     * Return the book - update status and calculate fine
-     * Demonstrates Core Java LocalDate API
+     * Return the book - update status and calculate fine.
+     * Fine is computed BEFORE flipping status to RETURNED, because
+     * isOverdue()/calculateDaysOverdue() treat RETURNED records as settled.
      */
     public void returnBook() {
+        this.fineAmount = calculateFine();
         this.returnDate = LocalDate.now();
         this.status = "RETURNED";
-        this.fineAmount = calculateFine();
     }
 
     // ==================== Getters and Setters ====================

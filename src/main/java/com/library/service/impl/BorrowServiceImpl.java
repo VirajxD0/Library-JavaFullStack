@@ -4,6 +4,7 @@ import com.library.dto.BorrowDTO;
 import com.library.entity.Book;
 import com.library.entity.BorrowRecord;
 import com.library.entity.Member;
+import com.library.exception.BookNotAvailableException;
 import com.library.exception.ResourceNotFoundException;
 import com.library.mapper.BorrowMapper;
 import com.library.repository.BookRepository;
@@ -19,12 +20,6 @@ import java.util.List;
 
 /**
  * BorrowServiceImpl - Business logic for book borrowing operations
- * 
- * This service demonstrates:
- * - Transaction management (@Transactional)
- * - Business rule enforcement (check availability before borrowing)
- * - Entity relationship management (Book <-> Member via BorrowRecord)
- * - Core Java date API (LocalDate) for due date calculations
  */
 @Service
 @Transactional
@@ -50,20 +45,20 @@ public class BorrowServiceImpl implements BorrowService {
 
         // 2. Check availability (business rule)
         if (!book.isAvailable()) {
-            throw new RuntimeException("Book is not available for borrowing. No copies left.");
+            throw new BookNotAvailableException(bookId);
         }
 
         // 3. Find the member
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new ResourceNotFoundException("Member", memberId));
 
-        // 4. Create borrow record
+        // 4. Create borrow record (14-day loan period)
         BorrowRecord record = new BorrowRecord(book, member);
         record.setBorrowDate(LocalDate.now());
         record.setDueDate(LocalDate.now().plusDays(14)); // 2 weeks borrowing period
         record.setStatus("BORROWED");
 
-        // 5. Decrease available copies (Core Java: modifying object state)
+        // 5. Decrease available copies
         book.decreaseAvailableCopies();
         bookRepository.save(book);
 
@@ -80,7 +75,7 @@ public class BorrowServiceImpl implements BorrowService {
 
         // 2. Check if already returned
         if ("RETURNED".equals(record.getStatus())) {
-            throw new RuntimeException("Book has already been returned.");
+            throw new IllegalStateException("Book has already been returned (borrowId=" + borrowId + ").");
         }
 
         // 3. Return the book (updates status, return date, and calculates fine)
@@ -94,6 +89,14 @@ public class BorrowServiceImpl implements BorrowService {
         // 5. Save updated record
         BorrowRecord saved = borrowRecordRepository.save(record);
         return borrowMapper.toDTO(saved);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BorrowDTO getBorrowById(Long borrowId) {
+        BorrowRecord record = borrowRecordRepository.findById(borrowId)
+                .orElseThrow(() -> new ResourceNotFoundException("BorrowRecord", borrowId));
+        return borrowMapper.toDTO(record);
     }
 
     @Override

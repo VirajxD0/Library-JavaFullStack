@@ -2,6 +2,7 @@ package com.library.repository;
 
 import com.library.entity.Book;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -26,7 +27,7 @@ import java.util.Optional;
  * - @Param for named parameters
  */
 @Repository
-public interface BookRepository extends JpaRepository<Book, Long> {
+public interface BookRepository extends JpaRepository<Book, Long>, JpaSpecificationExecutor<Book> {
 
     // ==================== Derived Query Methods ====================
     // Spring Data JPA parses the method name and generates the query automatically
@@ -60,10 +61,11 @@ public interface BookRepository extends JpaRepository<Book, Long> {
 
     /**
      * Search books by title OR ISBN (flexible search)
-     * JPQL (Java Persistence Query Language) works on entity fields, not table columns
-     * This is more portable than native SQL
+     * JPQL (Java Persistence Query Language) works on entity fields, not table columns.
+     * CONCAT adds the % wildcards because JPQL parameters cannot be
+     * embedded inside a LIKE literal (%:keyword would match literally).
      */
-    @Query("SELECT b FROM Book b WHERE b.title LIKE %:keyword OR b.isbn LIKE %:keyword")
+    @Query("SELECT b FROM Book b WHERE b.title LIKE CONCAT('%', :keyword, '%') OR b.isbn LIKE CONCAT('%', :keyword, '%')")
     List<Book> searchBooks(@Param("keyword") String keyword);
 
     /**

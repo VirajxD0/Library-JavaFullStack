@@ -7,23 +7,18 @@ import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 /**
- * MemberRestController - REST API for Member operations
- * 
- * Follows REST conventions:
- * - GET /api/v1/members - List all
- * - GET /api/v1/members/{id} - Get one
- * - POST /api/v1/members - Create
- * - PUT /api/v1/members/{id} - Update
- * - DELETE /api/v1/members/{id} - Delete (soft delete)
+ * MemberRestController - REST API for Member operations (librarian only).
  */
 @RestController
 @RequestMapping("/api/v1/members")
 @CrossOrigin(origins = "*")
+@PreAuthorize("hasAnyRole('LIBRARIAN','ADMIN')")
 public class MemberRestController {
 
     @Autowired

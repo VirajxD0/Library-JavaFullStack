@@ -7,12 +7,14 @@ import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 /**
- * CategoryRestController - REST API for Category operations
+ * CategoryRestController - REST API for Category operations.
+ * Reads: any authenticated user. Writes: librarian only.
  */
 @RestController
 @RequestMapping("/api/v1/categories")
@@ -35,6 +37,7 @@ public class CategoryRestController {
     }
 
     @PostMapping
+    @PreAuthorize("hasAnyRole('LIBRARIAN','ADMIN')")
     public ResponseEntity<ApiResponse<CategoryDTO>> createCategory(
             @Valid @RequestBody CategoryDTO categoryDTO) {
         CategoryDTO created = categoryService.createCategory(categoryDTO);
@@ -43,6 +46,7 @@ public class CategoryRestController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('LIBRARIAN','ADMIN')")
     public ResponseEntity<ApiResponse<CategoryDTO>> updateCategory(
             @PathVariable Long id,
             @Valid @RequestBody CategoryDTO categoryDTO) {
@@ -51,6 +55,7 @@ public class CategoryRestController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('LIBRARIAN','ADMIN')")
     public ResponseEntity<ApiResponse<Void>> deleteCategory(@PathVariable Long id) {
         categoryService.deleteCategory(id);
         return ResponseEntity.ok(ApiResponse.success(null, "Category deleted successfully"));

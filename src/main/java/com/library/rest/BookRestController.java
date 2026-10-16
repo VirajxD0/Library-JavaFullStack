@@ -2,28 +2,29 @@ package com.library.rest;
 
 import com.library.dto.ApiResponse;
 import com.library.dto.BookDTO;
+import com.library.dto.BookSearchCriteria;
+import com.library.dto.PagedResponse;
 import com.library.service.BookService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 /**
- * BookRestController - REST API for Book operations
- * 
- * Key Annotations:
- * @RestController = @Controller + @ResponseBody
- *   - @Controller: Marks as a Spring MVC controller
- *   - @ResponseBody: Automatically serializes return values to JSON
- * 
- * @RequestMapping("/api/v1/books"): Base URL for all endpoints in this controller
- * @CrossOrigin: Enables CORS (Cross-Origin Resource Sharing) for frontend apps
- * 
- * This controller handles HTTP requests and returns JSON responses.
- * It delegates business logic to BookService (separation of concerns).
+ * BookRestController - REST API for Book operations.
+ *
+ * Pagination/sorting: GET /api/v1/books?page=0&size=10&sort=title,asc
+ * Multi-criteria search: GET /api/v1/books/search/advanced?keyword=&title=&categoryId=&authorId=&language=&publicationYear=&availableOnly=
+ *
+ * Authorization (librarian vs member):
+ * - Reads: any authenticated user (librarian or member); two endpoints public.
+ * - Writes: librarian only (ROLE_LIBRARIAN / legacy ROLE_ADMIN).
  */
 @RestController
 @RequestMapping("/api/v1/books")
@@ -34,24 +35,17 @@ public class BookRestController {
     private BookService bookService;
 
     /**
-     * GET /api/v1/books - List all books
-     * 
-     * @RequestParam: Query parameters from the URL
-     *   Example: /api/v1/books?page=0&size=10
+     * GET /api/v1/books - Paginated + sorted book list.
+     * Example: /api/v1/books?page=0&size=10&sort=title,asc
      */
     @GetMapping
-    public ResponseEntity<ApiResponse<List<BookDTO>>> getAllBooks(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "100") int size) {
-        List<BookDTO> books = bookService.getAllBooks(page, size);
-        return ResponseEntity.ok(ApiResponse.success(books));
+    public ResponseEntity<ApiResponse<PagedResponse<BookDTO>>> getAllBooks(
+            @PageableDefault(size = 20) Pageable pageable) {
+        return ResponseEntity.ok(ApiResponse.success(bookService.getAllBooks(pageable)));
     }
 
     /**
      * GET /api/v1/books/{id} - Get a single book by ID
-     * 
-     * @PathVariable: Extracts value from the URL path
-     *   Example: /api/v1/books/5 -> id = 5
      */
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<BookDTO>> getBookById(@PathVariable Long id) {
@@ -60,12 +54,10 @@ public class BookRestController {
     }
 
     /**
-     * POST /api/v1/books - Create a new book
-     * 
-     * @RequestBody: Automatically deserializes JSON request body to BookDTO
-     * @Valid: Triggers Bean Validation (checks @NotBlank, @Size, etc.)
+     * POST /api/v1/books - Create a new book (librarian only)
      */
     @PostMapping
+    @PreAuthorize("hasAnyRole('LIBRARIAN','ADMIN')")
     public ResponseEntity<ApiResponse<BookDTO>> createBook(
             @Valid @RequestBody BookDTO bookDTO) {
         BookDTO created = bookService.createBook(bookDTO);
@@ -75,9 +67,10 @@ public class BookRestController {
     }
 
     /**
-     * PUT /api/v1/books/{id} - Update an existing book
+     * PUT /api/v1/books/{id} - Update an existing book (librarian only)
      */
     @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('LIBRARIAN','ADMIN')")
     public ResponseEntity<ApiResponse<BookDTO>> updateBook(
             @PathVariable Long id,
             @Valid @RequestBody BookDTO bookDTO) {
@@ -86,16 +79,17 @@ public class BookRestController {
     }
 
     /**
-     * DELETE /api/v1/books/{id} - Delete a book
+     * DELETE /api/v1/books/{id} - Delete a book (librarian only)
      */
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('LIBRARIAN','ADMIN')")
     public ResponseEntity<ApiResponse<Void>> deleteBook(@PathVariable Long id) {
         bookService.deleteBook(id);
         return ResponseEntity.ok(ApiResponse.success(null, "Book deleted successfully"));
     }
 
     /**
-     * GET /api/v1/books/search?keyword=java - Search books by keyword
+     * GET /api/v1/books/search?keyword=java - Legacy keyword search (public).
      */
     @GetMapping("/search")
     public ResponseEntity<ApiResponse<List<BookDTO>>> searchBooks(
@@ -105,7 +99,18 @@ public class BookRestController {
     }
 
     /**
-     * GET /api/v1/books/available - Get books with available copies
+     * GET /api/v1/books/search/advanced - Multi-criteria + paginated + sorted search.
+     * Example: /api/v1/books/search/advanced?title=java&categoryId=3&availableOnly=true&page=0&size=10&sort=title,asc
+     */
+    @GetMapping("/search/advanced")
+    public ResponseEntity<ApiResponse<PagedResponse<BookDTO>>> advancedSearch(
+            @ModelAttribute BookSearchCriteria criteria,
+            @PageableDefault(size = 20) Pageable pageable) {
+        return ResponseEntity.ok(ApiResponse.success(bookService.searchBooks(criteria, pageable)));
+    }
+
+    /**
+     * GET /api/v1/books/available - Get books with available copies (public)
      */
     @GetMapping("/available")
     public ResponseEntity<ApiResponse<List<BookDTO>>> getAvailableBooks() {
