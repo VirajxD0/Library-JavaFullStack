@@ -97,7 +97,12 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/", "/login", "/register", "/css/**", "/js/**", "/h2-console/**", "/api/v1/auth/**", "/403", "/error/**",
-                        "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/actuator/health", "/actuator/info").permitAll()
+                        "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/actuator/health", "/actuator/info",
+                        // Internal JSP forwards: DispatcherServlet forwards the resolved view name to
+                        // /WEB-INF/jsp/**. That forward re-enters this filter chain; without permitAll it
+                        // falls through to anyRequest().authenticated(), throws AccessDeniedException for
+                        // anonymous users, and the entry point redirects to /login -> infinite loop.
+                        "/WEB-INF/jsp/**").permitAll()
                 .requestMatchers("/books/add", "/books/edit/**", "/books/delete/**", "/books/save", "/books/update/**").hasAnyRole("LIBRARIAN", "ADMIN")
                 .requestMatchers("/members/**").hasAnyRole("LIBRARIAN", "ADMIN")
                 .requestMatchers("/dashboard", "/books", "/books/view/**", "/books/search", "/borrows", "/borrows/borrow", "/borrows/return/**", "/borrows/overdue").hasAnyRole("MEMBER", "USER", "LIBRARIAN", "ADMIN")

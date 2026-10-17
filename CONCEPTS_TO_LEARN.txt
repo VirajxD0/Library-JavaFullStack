@@ -2,9 +2,10 @@
  CONCEPTS TO LEARN — Library Management System (Java Full Stack)
  Complete Learning Roadmap for Core Java → JDBC → Servlets → JSP → Spring → 
  Spring Boot → Hibernate → REST APIs → Spring Security + JWT + BCrypt
+ + Flyway Migrations, Pagination/Sorting/Search, JUnit/Mockito, Docker, Swagger
 ================================================================================
 Goal: Understand EVERY folder/file in library-management-system well enough to
-explain in interview. Study in order A → H. Tick each concept after you can
+explain in interview. Study in order A → K. Tick each concept after you can
 whiteboard it without looking.
 
 --------------------------------------------------------------------------------
@@ -303,14 +304,19 @@ I. SPRING SECURITY + JWT + BCRYPT + RBAC (Week 5-6 — Modern, Most Important)
     - Where: security/JwtAuthenticationFilter.java — registered addFilterBefore(UsernamePasswordAuthenticationFilter)
 
 64. RBAC (Role-Based Access Control)
-    - Enum Role.ROLE_USER / ROLE_ADMIN, @Enumerated(STRING) stored as string.
-    - Config: .hasRole("ADMIN") → expects ROLE_ADMIN, .hasAnyRole("USER","ADMIN")
-    - JSP: ${pageContext.request.isUserInRole('ROLE_ADMIN')} to hide buttons/menu
-    - Task: Add new ROLE_LIBRARIAN and restrict /categories/**
+    - Enum Role with 4 values: ROLE_LIBRARIAN, ROLE_MEMBER (canonical Project-2 names) + ROLE_ADMIN, ROLE_USER (legacy aliases kept for backward compat).
+    - isLibrarian() / isMember() helper methods on the enum.
+    - Config: .hasAnyRole("LIBRARIAN","ADMIN") → expects ROLE_LIBRARIAN/ROLE_ADMIN, .hasAnyRole("MEMBER","USER",...)
+    - Method-level: @PreAuthorize("hasAnyRole('LIBRARIAN','ADMIN')") on REST controller write methods.
+    - JSP: ${pageContext.request.isUserInRole('ROLE_ADMIN')} to hide buttons/menu.
+    - Where: entity/Role.java, security/SecurityConfig.java, rest/*RestController.java (class + method level)
+    - Task: Why keep legacy aliases? (so existing seed users/admin demos keep working after the rename)
 
 65. Authorization Decisions
-    - URL-based in SecurityConfig vs Method-based @PreAuthorize("hasRole('ADMIN')") on service methods (EnableMethodSecurity)
-    - Demo hidden: Book.RestController could add @PreAuthorize, but currently URL-based.
+    - URL-based in SecurityConfig (hasAnyRole) + Method-based @PreAuthorize on REST controllers (EnableMethodSecurity)
+    - Librarian-only writes enforced at BOTH levels (defence in depth): URL matcher + @PreAuthorize.
+    - Where: security/SecurityConfig.java + rest/BookRestController, MemberRestController, CategoryRestController, BorrowRestController
+    - Task: Why enforce at both levels? (a missed URL rule still fails at the method)
 
 66. CSRF
     - Cross-Site Request Forgery. For JSP session, POST needs _csrf hidden field. This project disables CSRF for demo (SecurityConfig csrf.disable()) with comment. In production enable and add <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
@@ -359,18 +365,190 @@ J. ADDITIONAL CONCEPTS
 76. Deployment
     - Embedded Tomcat: java -jar target/*.war (Spring Boot) vs External Tomcat: copy war to webapps/
     - WAR packaging for JSP (JSP needs war + jasper). JAR would not support JSP well.
+    - Docker: multi-stage Dockerfile (Maven build stage → JRE 17 runtime), docker-compose.yml (app + MySQL 8, healthcheck, depends_on).
+    - Where: Dockerfile, docker-compose.yml, .dockerignore
+    - Task: Why multi-stage build? (small final image, no Maven toolchain in prod)
 
 77. Testing Strategy
-    - Unit: service with mocks, Repository with @DataJpaTest, Controller with @WebMvcTest + @WithMockUser, Security with spring-security-test
-    - Manual: Postman for JWT, browser for JSP
+    - Unit (Mockito): BookServiceImplTest, BorrowServiceImplTest — mocked repositories, real mappers, ArgumentCaptor for Pageable/Specification.
+    - Repository (@DataJpaTest on H2): BookRepositoryTest — derived queries + JPQL searchBooks.
+    - Integration (@SpringBootTest + MockMvc): BookBorrowApiIntegrationTest — paged envelope, advanced search, member-403, librarian-201, no-token-401, borrow→return→conflict lifecycle, validation-400, overdue/stats.
+    - Tools: @ExtendWith(MockitoExtension), @Spy for mappers, @WithMockUser(roles=...) for RBAC, @PageableDefault.
+    - Test isolation: src/test/resources/application.properties uses a separate H2 'testdb', Flyway off, create-drop — dev data never touched.
+    - Manual: Postman/curl for JWT, browser for JSP.
+    - Task: Why @Spy the mapper instead of mocking it? (real conversion logic, only repositories mocked)
 
-78. Git & .gitignore
+79. Git & .gitignore
     - Ignore target/, .idea, .settings, .DS_Store, *.log
+
+--------------------------------------------------------------------------------
+J2. NEW: DATABASE MIGRATIONS (Flyway) + SCHEMA MANAGEMENT
+--------------------------------------------------------------------------------
+80. Flyway Basics
+    - Versioned SQL scripts in src/main/resources/db/migration/ (V1__baseline_schema.sql, V2__performance_indexes.sql).
+    - Naming convention: V{version}__{description}.sql (double underscore). Flyway runs them in version order, once each, tracked in flyway_schema_history table.
+    - Why Flyway over ddl-auto=update? (repeatable, reviewable, prod-safe; ddl-auto can drop columns silently)
+    - Where: src/main/resources/db/migration/, application*.properties (spring.flyway.*)
+    - Task: What happens if you rename V1 to V1a? (checksum mismatch → migration fails)
+
+81. Baseline Schema Script
+    - Mirrors all 8 entities (categories, authors, publishers, books, book_authors, members, borrow_records, users) with FKs and indexes.
+    - initial.sql at repo root is the canonical copy of V1 (kept in sync manually).
+    - Where: db/migration/V1__baseline_schema.sql, initial.sql
+    - Task: Why keep initial.sql separately? (reference for manual DB setup / documentation)
+
+82. Profile-Based DDL Strategy
+    - Dev: spring.jpa.hibernate.ddl-auto=update (lenient, Flyway still runs).
+    - Prod: ddl-auto=validate (Hibernate only checks mapping; Flyway owns schema), flyway.validate-on-migrate=true.
+    - Test: ddl-auto=create-drop, Flyway disabled (isolated testdb).
+    - Task: Why validate instead of update in prod? (prevent silent schema drift in production)
+
+83. Circular Dependency Pitfall
+    - data.sql + spring.jpa.defer-datasource-initialization=true + Flyway → circular depends-on between flyway and entityManagerFactory.
+    - Fix: retire data.sql; seed via @Transactional CommandLineRunner (DataInitializer).
+    - Where: application-dev.properties (spring.sql.init.mode=never), config/DataInitializer.java
+    - Task: Draw the dependency graph that causes the cycle.
+
+--------------------------------------------------------------------------------
+J3. NEW: PAGINATION, SORTING & MULTI-CRITERIA SEARCH
+--------------------------------------------------------------------------------
+84. Spring Data Pageable / Page<T>
+    - Repository method findAll(Pageable) returns Page<Book> with content, totalElements, totalPages, number, size, last.
+    - Controller binds via @PageableDefault(size=20) Pageable pageable; client passes ?page=0&size=10&sort=title,asc.
+    - Where: rest/BookRestController.getAllBooks, service/impl/BookServiceImpl.getAllBooks(Pageable)
+    - Task: Why 0-indexed pages? (Spring Data convention; JPA offset = page * size)
+
+85. Sort
+    - Sort.by("title").ascending() / PageRequest.of(page, size, Sort.by(...)).
+    - Multiple: Sort.by("title").and(Sort.by("publicationYear").descending()).
+    - Task: What happens with an unknown sort field? (PropertyReferenceException → 500; validate input)
+
+86. PagedResponse Envelope
+    - Custom DTO wrapping Page content so the API contract is explicit (content, page, size, totalElements, totalPages, last).
+    - Returned inside the global ApiResponse<T> wrapper → {success, message, data:{...}}.
+    - Where: dto/PagedResponse.java
+    - Task: Why not return Page<T> directly? (leaks Spring Data internals, couples API to framework)
+
+87. JPA Specification (Criteria API)
+    - Specification<Book> builds a type-safe, composable Predicate via Specification.where(...).and(...).
+    - Repository extends JpaSpecificationExecutor<Book> → findAll(Specification, Pageable).
+    - Where: specification/BookSpecification.java, repository/BookRepository
+    - Task: Specification vs @Query — when to use which? (dynamic criteria → Specification; fixed query → @Query)
+
+88. Multi-Criteria Search
+    - BookSearchCriteria DTO binds optional filters from query params (keyword, title, isbn, categoryId, authorId, language, publicationYear, availableOnly).
+    - BookSpecification.fromCriteria() AND-combines only non-null filters (blank = ignored).
+    - Endpoint: GET /api/v1/books/search/advanced?title=java&availableOnly=true&page=0&size=5&sort=title,asc
+    - Where: dto/BookSearchCriteria.java, specification/BookSpecification.java, rest/BookRestController.advancedSearch
+    - Task: Why Specification over a giant @Query with 8 optional params? (readability, testability, no JPQL string building)
+
+--------------------------------------------------------------------------------
+J4. NEW: RBAC — LIBRARIAN vs MEMBER
+--------------------------------------------------------------------------------
+89. Role Model
+    - Canonical roles: ROLE_LIBRARIAN (manages catalog) + ROLE_MEMBER (borrows). Legacy aliases ROLE_ADMIN/ROLE_USER kept so existing data and demos keep working.
+    - isLibrarian() / isMember() helpers on the enum.
+    - Where: entity/Role.java, config/DataInitializer.java (seeds librarian/member/admin/user)
+    - Task: Why keep aliases instead of migrating? (zero-downtime, backward compat with existing DB rows)
+
+90. Dual Enforcement (Defence in Depth)
+    - URL level: SecurityConfig requestMatchers with hasAnyRole("LIBRARIAN","ADMIN").
+    - Method level: @PreAuthorize on REST controller methods.
+    - If a URL rule is missed, the method still blocks → 403.
+    - Where: security/SecurityConfig.java + rest/*RestController.java
+    - Task: Which one wins if they disagree? (both must allow; method-level is the final gate)
+
+91. Permission Matrix
+    - Librarian: full catalog writes, member management, all borrows/stats.
+    - Member: browse/search, borrow/return, own history.
+    - Anonymous: only /auth/**, search, available books, swagger/health.
+    - Where: security/SecurityConfig.java, rest/*RestController.java
+    - Task: Draw the matrix for a new endpoint you'd add.
+
+--------------------------------------------------------------------------------
+J5. NEW: JSP FORWARD & SECURITY INTERACTION
+--------------------------------------------------------------------------------
+92. The Redirect Loop Bug
+    - AuthController.loginPage() returns view "auth/login" → InternalResourceViewResolver forwards to /WEB-INF/jsp/auth/login.jsp.
+    - That forward re-enters the Spring Security filter chain under the URL /WEB-INF/jsp/auth/login.jsp.
+    - Without permitAll("/WEB-INF/jsp/**"), it falls to anyRequest().authenticated() → AccessDeniedException → entry point redirects to /login → infinite "redirected too many times".
+    - Fix: permitAll("/WEB-INF/jsp/**") in the web chain.
+    - Where: security/SecurityConfig.java
+    - Task: How did you debug it? (Spring Security TRACE: "Securing GET /WEB-INF/jsp/auth/login.jsp" → "AuthenticatedAuthorizationManager" → AccessDeniedException)
+
+93. Security Trace Logging
+    - logging.level.org.springframework.security=TRACE prints every filter decision: Securing GET ..., Invoking AuthorizationFilter, which matcher matched, AuthenticatedAuthorizationManager.
+    - Invaluable for "why is this 302/403?" debugging.
+    - Task: Try it: run with --logging.level.org.springframework.security=TRACE and read one request end to end.
+
+--------------------------------------------------------------------------------
+J6. NEW: DOCKER & CONTAINERIZATION
+--------------------------------------------------------------------------------
+94. Multi-Stage Dockerfile
+    - Stage 1 (build): maven:3.9 + JDK 17 → mvn clean package -DskipTests → produces WAR.
+    - Stage 2 (runtime): eclipse-temurin:17-jre → copy only the WAR → ENTRYPOINT java -jar.
+    - HEALTHCHECK via wget /actuator/health.
+    - Where: Dockerfile
+    - Task: Why multi-stage? (final image ~200MB vs ~800MB with Maven)
+
+95. Docker Compose Stack
+    - mysql:8.0 with MYSQL_ROOT_PASSWORD, MYSQL_DATABASE, healthcheck (mysqladmin ping).
+    - app depends_on mysql condition: service_healthy.
+    - Env overrides: SPRING_PROFILES_ACTIVE=prod, SPRING_DATASOURCE_URL/USERNAME/PASSWORD, JWT_SECRET.
+    - Where: docker-compose.yml
+    - Task: Why depends_on + healthcheck? (app must not start before MySQL accepts connections)
+
+96. .dockerignore
+    - Excludes target/, .git, .settings, .project, .classpath → faster context upload, no stale build artifacts.
+    - Where: .dockerignore
+    - Task: What breaks if you forget it? (stale target/ copied into image → wrong classes)
+
+--------------------------------------------------------------------------------
+J7. NEW: SWAGGER / OPENAPI
+--------------------------------------------------------------------------------
+97. springdoc-openapi
+    - springdoc-openapi-starter-webmvc-ui → Swagger UI at /swagger-ui.html, JSON spec at /v3/api-docs.
+    - OpenApiConfig bean: title, version, description + Bearer JWT security scheme.
+    - UI allows "Authorize" button → paste JWT → test secured endpoints.
+    - Where: config/OpenApiConfig.java, pom.xml, application.properties (springdoc.*)
+    - Task: Diff Springfox (old) vs springdoc (new Boot 3 compatible)
+
+--------------------------------------------------------------------------------
+J8. NEW: FINE CALCULATION & BORROWING EDGE CASES
+--------------------------------------------------------------------------------
+98. Fine Math (BigDecimal)
+    - calculateFine(): $0.50 × daysOverdue using BigDecimal (never double for money).
+    - Fine must be computed BEFORE status flips to RETURNED (isOverdue() ignores RETURNED records).
+    - Where: entity/BorrowRecord.returnBook(), calculateFine(), calculateDaysOverdue()
+    - Task: Why BigDecimal not double? (floating point: 0.1 + 0.2 = 0.30000000000000004)
+
+99. Borrowing Edge Cases
+    - No copies → BookNotAvailableException → 409 Conflict.
+    - Double return → IllegalStateException → 409.
+    - Unknown book/member/borrow → ResourceNotFoundException → 404.
+    - Missing bookId/memberId → 400 (validated in controller).
+    - Where: service/impl/BorrowServiceImpl, exception/BookNotAvailableException, GlobalExceptionHandler
+    - Task: Why custom exceptions instead of RuntimeException("...")? (clean HTTP status mapping)
+
+--------------------------------------------------------------------------------
+J9. NEW: CUSTOM EXCEPTIONS & GLOBAL HANDLER
+--------------------------------------------------------------------------------
+100. Exception Hierarchy
+     - ResourceNotFoundException (404), DuplicateResourceException (409), BookNotAvailableException (409), IllegalStateException (409).
+     - GlobalExceptionHandler (@RestControllerAdvice) maps each to ResponseEntity with ErrorResponse {status, message}.
+     - Also handles MethodArgumentNotValidException (400, joined field errors), BadCredentials (401), AccessDenied (403).
+     - Where: exception/*, exception/GlobalExceptionHandler.java
+     - Task: Why @RestControllerAdvice not @ControllerAdvice? (auto @ResponseBody for REST)
 
 --------------------------------------------------------------------------------
 K. INTERVIEW PREPARATION CHECKLIST
 --------------------------------------------------------------------------------
-79. Be able to explain for each tech:
+79. Actuator & Monitoring
+    - spring-boot-starter-actuator exposes /actuator/health, /actuator/info.
+    - management.endpoints.web.exposure.include=health,info; health.show-details=never (don't leak internals).
+    - Health check in Dockerfile: wget /actuator/health every 30s.
+    - Where: pom.xml, application.properties, Dockerfile
+    - Task: Why hide health details in prod? (avoid leaking DB/version info to attackers)
     - What it is (1 sentence)
     - Why we used it (vs alternative: JDBC vs JPA, Servlet vs Spring MVC, Session vs JWT)
     - Where in project
@@ -389,7 +567,7 @@ K. INTERVIEW PREPARATION CHECKLIST
     - Show H2 console users table hashed passwords
 
 82. Resume Story:
-    - "Built full-stack secure library with Spring Security/JWT, BCrypt, RBAC, layered architecture, DTOs, global exception handling, 7-table normalized schema, legacy JDBC/Servlet demo to show evolution."
+    - "Built full-stack secure library with Spring Security/JWT, BCrypt, RBAC (librarian vs member), layered architecture, DTOs, global exception handling, Flyway migrations, pagination/sorting/multi-criteria search, 22 JUnit/Mockito tests, Swagger docs, Docker setup, 8-table normalized schema, legacy JDBC/Servlet demo to show evolution."
 
 ================================================================================
  STUDY ORDER (Suggested 3 Weeks)
@@ -397,8 +575,10 @@ K. INTERVIEW PREPARATION CHECKLIST
 Week 1: A (Core Java) → B (JDBC) → C (Servlets) → Do legacy package yourself
 Week 2: D (JSP) → E (Spring) → F (Spring Boot) → Run project without security branch
 Week 3: G (Hibernate) → H (REST) → I (Security/JWT) → Test role + JWT flows, read SecurityConfig line-by-line
+Week 4: J2 (Flyway) → J3 (Pagination/Search/Specifications) → J6 (Docker) → Run mvn test, read BookBorrowApiIntegrationTest
+Week 5: J7 (Swagger) → J4 (RBAC) → J5 (JSP forward bug) → J8 (Fine math) → J9 (Exceptions) → J1 (Actuator)
 
 Each day: Read concept → find file → add a comment in your words → break it and fix it.
 
-Good luck — if you can explain SecurityConfig two chains + JwtTokenProvider without notes, you are ready for interview.
+Good luck — if you can explain SecurityConfig two chains + JwtTokenProvider + the /WEB-INF/jsp forward bug without notes, you are ready for interview.
 ================================================================================
